@@ -37,6 +37,7 @@ configbak.json
 
 # 数据目录（数据库、日志等）
 data/
+!web/src/data/
 *.db
 
 # 决策日志
