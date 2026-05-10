@@ -21,7 +21,7 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
 # ─── Stage 2: Build Go Backend ───────────────────────────────────
-FROM golang:1.23-alpine AS backend-builder
+FROM golang:1.25-alpine AS backend-builder
 
 RUN apk update && apk add --no-cache git make gcc g++ musl-dev
 
