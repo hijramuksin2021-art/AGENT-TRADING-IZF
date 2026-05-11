@@ -50,68 +50,87 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		}
 	}
 
-	// Get current price
-	marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
-	if err != nil {
-		return err
-	}
+	isMT5 := at.exchange == "mt5"
 
-	// Get balance (needed for multiple checks)
-	balance, err := at.trader.GetBalance()
-	if err != nil {
-		return fmt.Errorf("failed to get account balance: %w", err)
-	}
-	availableBalance := 0.0
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
-	}
-
-	// Get equity for position value ratio check
-	equity := 0.0
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		equity = eq
-	} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
-		equity = eq
+	// ── Get current price ─────────────────────────────────────────────────────
+	var currentPrice float64
+	if isMT5 {
+		// MT5: get price directly from the bridge (not CoinAok)
+		price, err := at.trader.GetMarketPrice(decision.Symbol)
+		if err != nil {
+			logger.Infof("  ⚠️ [MT5] Failed to get market price, continuing: %v", err)
+		}
+		currentPrice = price
 	} else {
-		equity = availableBalance // Fallback to available balance
+		marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
+		if err != nil {
+			return err
+		}
+		currentPrice = marketData.CurrentPrice
 	}
 
-	// [CODE ENFORCED] Position Value Ratio Check: position_value <= equity × ratio
-	adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
-	if wasCapped {
-		decision.PositionSizeUSD = adjustedPositionSize
+	// ── Calculate quantity ───────────────────────────────────────────────────
+	var quantity float64
+
+	if isMT5 {
+		// Forex/MT5: quantity = lot size (0.01, 0.10, 1.00, etc.)
+		quantity = decision.LotSize
+		if quantity <= 0 {
+			quantity = 0.01 // Default to micro lot
+			logger.Infof("  ⚠️ [MT5] LotSize not set by AI, defaulting to 0.01 lot")
+		}
+		logger.Infof("  📊 [MT5] Forex trade: %s LONG %.2f lots", decision.Symbol, quantity)
+	} else {
+		// Crypto: get balance and calculate USD-based quantity
+		balance, err := at.trader.GetBalance()
+		if err != nil {
+			return fmt.Errorf("failed to get account balance: %w", err)
+		}
+		availableBalance := 0.0
+		if avail, ok := balance["availableBalance"].(float64); ok {
+			availableBalance = avail
+		}
+		equity := 0.0
+		if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
+			equity = eq
+		} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
+			equity = eq
+		} else {
+			equity = availableBalance
+		}
+
+		// [CODE ENFORCED] Position Value Ratio Check
+		adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
+		if wasCapped {
+			decision.PositionSizeUSD = adjustedPositionSize
+		}
+
+		// ⚠️ Auto-adjust position size if insufficient margin
+		marginFactor := 1.01/float64(decision.Leverage) + 0.001
+		maxAffordablePositionSize := availableBalance / marginFactor
+		actualPositionSize := decision.PositionSizeUSD
+		if actualPositionSize > maxAffordablePositionSize {
+			adjustedSize := maxAffordablePositionSize * 0.98
+			logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
+				actualPositionSize, maxAffordablePositionSize, adjustedSize)
+			actualPositionSize = adjustedSize
+			decision.PositionSizeUSD = actualPositionSize
+		}
+
+		// [CODE ENFORCED] Minimum position size check
+		if err := at.enforceMinPositionSize(decision.PositionSizeUSD); err != nil {
+			return err
+		}
+
+		quantity = actualPositionSize / currentPrice
 	}
 
-	// ⚠️ Auto-adjust position size if insufficient margin
-	// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
-	//        = positionSize * (1.01/leverage + 0.001)
-	marginFactor := 1.01/float64(decision.Leverage) + 0.001
-	maxAffordablePositionSize := availableBalance / marginFactor
-
-	actualPositionSize := decision.PositionSizeUSD
-	if actualPositionSize > maxAffordablePositionSize {
-		// Use 98% of max to leave buffer for price fluctuation
-		adjustedSize := maxAffordablePositionSize * 0.98
-		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
-			actualPositionSize, maxAffordablePositionSize, adjustedSize)
-		actualPositionSize = adjustedSize
-		decision.PositionSizeUSD = actualPositionSize
-	}
-
-	// [CODE ENFORCED] Minimum position size check
-	if err := at.enforceMinPositionSize(decision.PositionSizeUSD); err != nil {
-		return err
-	}
-
-	// Calculate quantity with adjusted position size
-	quantity := actualPositionSize / marketData.CurrentPrice
 	actionRecord.Quantity = quantity
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
-	// Set margin mode
+	// Set margin mode (no-op for MT5)
 	if err := at.trader.SetMarginMode(decision.Symbol, at.config.IsCrossMargin); err != nil {
 		logger.Infof("  ⚠️ Failed to set margin mode: %v", err)
-		// Continue execution, doesn't affect trading
 	}
 
 	// Open position
@@ -128,7 +147,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 	logger.Infof("  ✓ Position opened successfully, order ID: %v, quantity: %.4f", order["orderId"], quantity)
 
 	// Record order to database and poll for confirmation
-	at.recordAndConfirmOrder(order, decision.Symbol, "open_long", quantity, marketData.CurrentPrice, decision.Leverage, 0)
+	at.recordAndConfirmOrder(order, decision.Symbol, "open_long", quantity, currentPrice, decision.Leverage, 0)
 
 	// Record position opening time
 	posKey := decision.Symbol + "_long"
@@ -167,68 +186,82 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 		}
 	}
 
-	// Get current price
-	marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
-	if err != nil {
-		return err
-	}
+	isMT5 := at.exchange == "mt5"
 
-	// Get balance (needed for multiple checks)
-	balance, err := at.trader.GetBalance()
-	if err != nil {
-		return fmt.Errorf("failed to get account balance: %w", err)
-	}
-	availableBalance := 0.0
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
-	}
-
-	// Get equity for position value ratio check
-	equity := 0.0
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		equity = eq
-	} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
-		equity = eq
+	// ── Get current price ─────────────────────────────────────────────────────
+	var currentPrice float64
+	if isMT5 {
+		price, err := at.trader.GetMarketPrice(decision.Symbol)
+		if err != nil {
+			logger.Infof("  ⚠️ [MT5] Failed to get market price, continuing: %v", err)
+		}
+		currentPrice = price
 	} else {
-		equity = availableBalance // Fallback to available balance
+		marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
+		if err != nil {
+			return err
+		}
+		currentPrice = marketData.CurrentPrice
 	}
 
-	// [CODE ENFORCED] Position Value Ratio Check: position_value <= equity × ratio
-	adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
-	if wasCapped {
-		decision.PositionSizeUSD = adjustedPositionSize
+	// ── Calculate quantity ───────────────────────────────────────────────────
+	var quantity float64
+
+	if isMT5 {
+		quantity = decision.LotSize
+		if quantity <= 0 {
+			quantity = 0.01
+			logger.Infof("  ⚠️ [MT5] LotSize not set by AI, defaulting to 0.01 lot")
+		}
+		logger.Infof("  📊 [MT5] Forex trade: %s SHORT %.2f lots", decision.Symbol, quantity)
+	} else {
+		balance, err := at.trader.GetBalance()
+		if err != nil {
+			return fmt.Errorf("failed to get account balance: %w", err)
+		}
+		availableBalance := 0.0
+		if avail, ok := balance["availableBalance"].(float64); ok {
+			availableBalance = avail
+		}
+		equity := 0.0
+		if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
+			equity = eq
+		} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
+			equity = eq
+		} else {
+			equity = availableBalance
+		}
+
+		// [CODE ENFORCED] Position Value Ratio Check
+		adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
+		if wasCapped {
+			decision.PositionSizeUSD = adjustedPositionSize
+		}
+
+		marginFactor := 1.01/float64(decision.Leverage) + 0.001
+		maxAffordablePositionSize := availableBalance / marginFactor
+		actualPositionSize := decision.PositionSizeUSD
+		if actualPositionSize > maxAffordablePositionSize {
+			adjustedSize := maxAffordablePositionSize * 0.98
+			logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
+				actualPositionSize, maxAffordablePositionSize, adjustedSize)
+			actualPositionSize = adjustedSize
+			decision.PositionSizeUSD = actualPositionSize
+		}
+
+		if err := at.enforceMinPositionSize(decision.PositionSizeUSD); err != nil {
+			return err
+		}
+
+		quantity = actualPositionSize / currentPrice
 	}
 
-	// ⚠️ Auto-adjust position size if insufficient margin
-	// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
-	//        = positionSize * (1.01/leverage + 0.001)
-	marginFactor := 1.01/float64(decision.Leverage) + 0.001
-	maxAffordablePositionSize := availableBalance / marginFactor
-
-	actualPositionSize := decision.PositionSizeUSD
-	if actualPositionSize > maxAffordablePositionSize {
-		// Use 98% of max to leave buffer for price fluctuation
-		adjustedSize := maxAffordablePositionSize * 0.98
-		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
-			actualPositionSize, maxAffordablePositionSize, adjustedSize)
-		actualPositionSize = adjustedSize
-		decision.PositionSizeUSD = actualPositionSize
-	}
-
-	// [CODE ENFORCED] Minimum position size check
-	if err := at.enforceMinPositionSize(decision.PositionSizeUSD); err != nil {
-		return err
-	}
-
-	// Calculate quantity with adjusted position size
-	quantity := actualPositionSize / marketData.CurrentPrice
 	actionRecord.Quantity = quantity
-	actionRecord.Price = marketData.CurrentPrice
+	actionRecord.Price = currentPrice
 
-	// Set margin mode
+	// Set margin mode (no-op for MT5)
 	if err := at.trader.SetMarginMode(decision.Symbol, at.config.IsCrossMargin); err != nil {
 		logger.Infof("  ⚠️ Failed to set margin mode: %v", err)
-		// Continue execution, doesn't affect trading
 	}
 
 	// Open position
@@ -245,7 +278,7 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	logger.Infof("  ✓ Position opened successfully, order ID: %v, quantity: %.4f", order["orderId"], quantity)
 
 	// Record order to database and poll for confirmation
-	at.recordAndConfirmOrder(order, decision.Symbol, "open_short", quantity, marketData.CurrentPrice, decision.Leverage, 0)
+	at.recordAndConfirmOrder(order, decision.Symbol, "open_short", quantity, currentPrice, decision.Leverage, 0)
 
 	// Record position opening time
 	posKey := decision.Symbol + "_short"
