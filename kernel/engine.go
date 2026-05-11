@@ -120,7 +120,8 @@ type Decision struct {
 
 	// Opening position parameters
 	Leverage        int     `json:"leverage,omitempty"`
-	PositionSizeUSD float64 `json:"position_size_usd,omitempty"`
+	PositionSizeUSD float64 `json:"position_size_usd,omitempty"`            // Crypto: position value in USD
+	LotSize         float64 `json:"lot_size,omitempty"`                      // Forex/MT5: lot size (0.01=micro, 0.10=mini, 1.0=standard)
 	StopLoss        float64 `json:"stop_loss,omitempty"`
 	TakeProfit      float64 `json:"take_profit,omitempty"`
 

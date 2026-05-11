@@ -36,6 +36,7 @@ interface FormState {
   show_in_competition: boolean
   scan_interval_minutes: number
   initial_balance?: number
+  default_lot_size?: number  // For MT5/Forex exchanges
 }
 
 interface TraderConfigModalProps {
@@ -405,37 +406,73 @@ export function TraderConfigModal({
             </h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">
-                    {t('marginMode', language)}
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleInputChange('is_cross_margin', true)}
-                      className={`flex-1 px-3 py-2 rounded text-sm ${
-                        formData.is_cross_margin
-                          ? 'bg-[#F0B90B] text-black'
-                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
-                      }`}
-                    >
-                      {t('crossMargin', language)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleInputChange('is_cross_margin', false)
-                      }
-                      className={`flex-1 px-3 py-2 rounded text-sm ${
-                        !formData.is_cross_margin
-                          ? 'bg-[#F0B90B] text-black'
-                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
-                      }`}
-                    >
-                      {t('isolatedMargin', language)}
-                    </button>
-                  </div>
-                </div>
+                {/* Conditional: Lot Size for MT5, Margin Mode for crypto */}
+                {(() => {
+                  const selectedExchange = availableExchanges.find(e => e.id === formData.exchange_id)
+                  const isMT5 = selectedExchange?.exchange_type?.toLowerCase() === 'mt5'
+
+                  if (isMT5) {
+                    const lotOptions = [0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1.00]
+                    return (
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">
+                          🎯 Default Lot Size (Forex)
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {lotOptions.map((lot) => (
+                            <button
+                              key={lot}
+                              type="button"
+                              onClick={() => handleInputChange('default_lot_size', lot)}
+                              className={`px-3 py-1.5 rounded text-xs font-mono ${
+                                (formData.default_lot_size ?? 0.01) === lot
+                                  ? 'bg-[#F0B90B] text-black font-bold'
+                                  : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139] hover:border-[#F0B90B]'
+                              }`}
+                            >
+                              {lot.toFixed(2)}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-[#848E9C] mt-1.5">
+                          0.01 = micro · 0.10 = mini · 1.00 = standard lot
+                        </p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">
+                        {t('marginMode', language)}
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('is_cross_margin', true)}
+                          className={`flex-1 px-3 py-2 rounded text-sm ${
+                            formData.is_cross_margin
+                              ? 'bg-[#F0B90B] text-black'
+                              : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                          }`}
+                        >
+                          {t('crossMargin', language)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('is_cross_margin', false)}
+                          className={`flex-1 px-3 py-2 rounded text-sm ${
+                            !formData.is_cross_margin
+                              ? 'bg-[#F0B90B] text-black'
+                              : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                          }`}
+                        >
+                          {t('isolatedMargin', language)}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
                 <div>
                   <label className="text-sm text-[#EAECEF] block mb-2">
                     {t('aiScanInterval', language)}

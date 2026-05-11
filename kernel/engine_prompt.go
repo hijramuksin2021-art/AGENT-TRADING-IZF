@@ -104,14 +104,25 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 
 	// Position sizing guidance
 	sb.WriteString("## Position Sizing Guidance\n")
-	sb.WriteString("Calculate `position_size_usd` based on your confidence and the Position Value Limits above:\n")
-	sb.WriteString("- High confidence (≥85): Use 80-100%% of max position value limit\n")
-	sb.WriteString("- Medium confidence (70-84): Use 50-80%% of max position value limit\n")
-	sb.WriteString("- Low confidence (60-69): Use 30-50%% of max position value limit\n")
-	examplePosSize := accountEquity * btcEthPosValueRatio
-	sb.WriteString(fmt.Sprintf("- Example: With equity %.0f and ratio %.1fx, max is %.0f\n",
-		accountEquity, btcEthPosValueRatio, examplePosSize))
-	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
+	if isForex {
+		sb.WriteString("For forex trading, use `lot_size` (NOT `position_size_usd`) to specify trade size:\n")
+		sb.WriteString("- Micro lot: 0.01 (1,000 units) — use for small accounts / testing\n")
+		sb.WriteString("- Mini lot:  0.10 (10,000 units) — use for medium accounts\n")
+		sb.WriteString("- Standard:  1.00 (100,000 units) — use for large accounts\n")
+		sb.WriteString("- High confidence (≥85): 0.05–0.10 lots per trade\n")
+		sb.WriteString("- Medium confidence (70-84): 0.02–0.05 lots per trade\n")
+		sb.WriteString("- Low confidence (60-69): 0.01–0.02 lots per trade\n")
+		sb.WriteString("- **Start with 0.01 lots** — be conservative until you know the exact account balance\n\n")
+	} else {
+		sb.WriteString("Calculate `position_size_usd` based on your confidence and the Position Value Limits above:\n")
+		sb.WriteString("- High confidence (≥85): Use 80-100%% of max position value limit\n")
+		sb.WriteString("- Medium confidence (70-84): Use 50-80%% of max position value limit\n")
+		sb.WriteString("- Low confidence (60-69): Use 30-50%% of max position value limit\n")
+		examplePosSize := accountEquity * btcEthPosValueRatio
+		sb.WriteString(fmt.Sprintf("- Example: With equity %.0f and ratio %.1fx, max is %.0f\n",
+			accountEquity, btcEthPosValueRatio, examplePosSize))
+		sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
+	}
 
 	// 4. Trading frequency (editable)
 	if promptSections.TradingFrequency != "" {
@@ -166,11 +177,12 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("```json\n[\n")
 
 	if isForex {
-		// Forex-specific JSON example
-		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"EURUSD\", \"action\": \"open_long\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 1.0750, \"take_profit\": 1.0950, \"confidence\": 82, \"risk_usd\": 500},\n",
-			riskControl.BTCETHMaxLeverage, examplePosSize))
+		// Forex JSON example — use lot_size, not position_size_usd
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"EURUSD\", \"action\": \"open_long\", \"leverage\": %d, \"lot_size\": 0.01, \"stop_loss\": 1.0750, \"take_profit\": 1.0950, \"confidence\": 82, \"risk_usd\": 10},\n",
+			riskControl.BTCETHMaxLeverage))
 		sb.WriteString("  {\"symbol\": \"XAUUSD\", \"action\": \"hold\"}\n")
 	} else {
+		examplePosSize := accountEquity * btcEthPosValueRatio
 		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
 			riskControl.BTCETHMaxLeverage, examplePosSize))
 		sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
@@ -180,8 +192,14 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("## Field Description\n\n")
 	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
-	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
-	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
+	if isForex {
+		sb.WriteString("- Required when opening: leverage, **lot_size**, stop_loss, take_profit, confidence, risk_usd\n")
+		sb.WriteString("- `lot_size`: trade size in standard lots (0.01=micro, 0.10=mini, 1.00=standard)\n")
+		sb.WriteString("- **DO NOT use position_size_usd for forex** — use lot_size instead\n\n")
+	} else {
+		sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+		sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
+	}
 
 	// 8. Custom Prompt
 	if e.config.CustomPrompt != "" {
