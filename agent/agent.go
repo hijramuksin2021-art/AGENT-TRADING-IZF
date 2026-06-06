@@ -180,6 +180,7 @@ func resolveModelRuntimeConfig(provider, customAPIURL, customModelName, fallback
 		"grok":     {url: "https://api.x.ai/v1", model: "grok-3-latest"},
 		"kimi":     {url: "https://api.moonshot.ai/v1", model: "moonshot-v1-auto"},
 		"minimax":  {url: "https://api.minimax.chat/v1", model: "MiniMax-M2.5"},
+		"ninerouter": {url: "http://localhost:20128/v1", model: "FRIDA"},
 	}
 
 	if customAPIURL == "" {

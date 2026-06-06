@@ -129,6 +129,11 @@ export const AI_PROVIDER_CONFIG: Record<string, AIProviderConfig> = {
     apiUrl: 'https://platform.minimax.io',
     apiName: 'MiniMax',
   },
+  ninerouter: {
+    defaultModel: 'FRIDA',
+    apiUrl: 'http://localhost:20128/v1',
+    apiName: 'NineRouter',
+  },
   claw402: {
     defaultModel: DEFAULT_CLAW402_MODEL,
     apiUrl: 'https://claw402.ai',

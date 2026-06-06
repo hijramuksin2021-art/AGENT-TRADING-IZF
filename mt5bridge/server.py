@@ -200,6 +200,22 @@ def get_market_price():
 # Order Endpoints
 # ============================================================
 
+def get_filling_mode(symbol_info):
+    """Auto-detect the correct filling mode supported by this broker/symbol.
+    Different brokers support different modes:
+    - ORDER_FILLING_FOK (0): Fill or Kill - all or nothing
+    - ORDER_FILLING_IOC (1): Immediately or Cancel
+    - ORDER_FILLING_RETURN (2): Partial fills allowed (most universal for market orders)
+    """
+    if symbol_info is None:
+        return mt5.ORDER_FILLING_RETURN
+    fm = symbol_info.filling_mode
+    if fm & 1:   # bit 0 = FOK supported
+        return mt5.ORDER_FILLING_FOK
+    if fm & 2:   # bit 1 = IOC supported
+        return mt5.ORDER_FILLING_IOC
+    return mt5.ORDER_FILLING_RETURN  # fallback: works for most market orders
+
 @app.route('/order/open', methods=['POST'])
 def open_order():
     """Open a new position."""
@@ -254,7 +270,7 @@ def open_order():
         "magic": magic,
         "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type_filling": get_filling_mode(symbol_info),
     }
 
     if sl > 0:
@@ -333,7 +349,7 @@ def close_order():
             "magic": pos.magic,
             "comment": "NOFX_CLOSE",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": get_filling_mode(mt5.symbol_info(pos.symbol)),
         }
 
         result = mt5.order_send(close_request)

@@ -14,6 +14,7 @@ const (
 	ProviderMiniMax  = "minimax"
 
 	ProviderClaw402 = "claw402"
+	ProviderNineRouter = "ninerouter"
 
 	// Default DeepSeek configuration (used as fallback in NewClient)
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com"

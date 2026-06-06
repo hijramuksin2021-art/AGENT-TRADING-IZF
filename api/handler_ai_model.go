@@ -69,6 +69,7 @@ func (s *Server) handleGetModelConfigs(c *gin.Context) {
 			{ID: "grok", Name: "Grok AI", Provider: "grok", Enabled: false, HasAPIKey: false},
 			{ID: "kimi", Name: "Kimi AI", Provider: "kimi", Enabled: false, HasAPIKey: false},
 			{ID: "minimax", Name: "MiniMax AI", Provider: "minimax", Enabled: false, HasAPIKey: false},
+			{ID: "ninerouter", Name: "NineRouter", Provider: "ninerouter", Enabled: false, HasAPIKey: false},
 		}
 		c.JSON(http.StatusOK, defaultModels)
 		return
@@ -221,6 +222,7 @@ func (s *Server) handleGetSupportedModels(c *gin.Context) {
 		{"id": "grok", "name": "Grok (xAI)", "provider": "grok", "defaultModel": "grok-3-latest"},
 		{"id": "kimi", "name": "Kimi (Moonshot)", "provider": "kimi", "defaultModel": "moonshot-v1-auto"},
 		{"id": "minimax", "name": "MiniMax", "provider": "minimax", "defaultModel": "MiniMax-M2.7"},
+		{"id": "ninerouter", "name": "NineRouter", "provider": "ninerouter", "defaultModel": "FRIDA"},
 		{"id": "claw402", "name": "Claw402 (Base USDC)", "provider": "claw402", "defaultModel": "deepseek-v4-flash"},
 	}
 
