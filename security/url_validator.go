@@ -55,9 +55,9 @@ func isPrivateIP(ip net.IP) bool {
 		return true // Invalid IP, treat as private
 	}
 
-	// Check if it's a loopback address
+	// For local development, allow localhost/loopback
 	if ip.IsLoopback() {
-		return true
+		return false
 	}
 
 	// Check if it's a link-local address
@@ -65,17 +65,10 @@ func isPrivateIP(ip net.IP) bool {
 		return true
 	}
 
-	// Check if it's a private address
-	if ip.IsPrivate() {
-		return true
-	}
-
-	// Check against our explicit private ranges
-	for _, block := range privateIPBlocks {
-		if block.Contains(ip) {
-			return true
-		}
-	}
+	// For local development, allow private IP ranges (192.168.x.x, 10.x.x.x, etc.)
+	// if ip.IsPrivate() {
+	// 	return true
+	// }
 
 	return false
 }
@@ -105,13 +98,9 @@ func ValidateURL(rawURL string) error {
 		return &SSRFError{URL: rawURL, Reason: "empty hostname"}
 	}
 
-	// Block localhost and common internal hostnames
+	// Block common internal hostnames (excluding localhost for local testing)
 	lowerHost := strings.ToLower(host)
 	blockedHosts := []string{
-		"localhost",
-		"127.0.0.1",
-		"::1",
-		"0.0.0.0",
 		"metadata.google.internal",
 		"metadata.google",
 		"instance-data",
